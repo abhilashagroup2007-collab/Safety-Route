@@ -1,4 +1,4 @@
-const API = "https://safety-route-suez.onrender.com/api";
+const API = "https://safety-route-suez.onrender.com";
    
 let map;
 
