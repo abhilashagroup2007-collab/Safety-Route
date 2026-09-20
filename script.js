@@ -1,5 +1,5 @@
 const API = window.location.protocol === "file:"
-    ? "http://localhost:5000/api"
+    ? "https://onrender.com"
     : "/api";
 
 let map;
