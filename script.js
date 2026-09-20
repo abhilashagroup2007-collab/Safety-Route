@@ -1,7 +1,5 @@
-const API = window.location.protocol === "file:"
-    ? "https://onrender.com"
-    : "/api";
-
+const API = "https://onrender.com";
+   
 let map;
 
 let currentLocation = null;
