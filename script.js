@@ -1,4 +1,6 @@
-const API = "https://safety-route-suez.onrender.com/api";
+const API = window.location.protocol === "file:"
+    ? "https://safety-route-swez.onrender.com/api"
+    : "/api";
    
 let map;
 
