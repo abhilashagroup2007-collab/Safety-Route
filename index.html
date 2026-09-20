@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>
+        Safety Route — Navigate Securely
+    </title>
+
+    <link
+        rel="stylesheet"
+        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    >
+
+    <link
+        rel="stylesheet"
+        href="style.css"
+    >
+
+</head>
+
+
+<body>
+
+
+<header class="navbar">
+
+    <div class="brand">
+
+        <img
+            src="assets/Safe_route_logo.png"
+            alt="Safe Route"
+            class="logo-image"
+        >
+
+        <div>
+
+            <strong>
+                Safety Route
+            </strong>
+
+            <small>
+                Navigate Securely
+            </small>
+
+        </div>
+
+    </div>
+
+
+    <nav>
+
+        <a href="#planner">
+            Route Planner
+        </a>
+
+        <a href="#features">
+            Features
+        </a>
+
+        <a href="#premium">
+            Premium
+        </a>
+
+        <a href="#safety-guide">
+            Safety guide
+        </a>
+
+    </nav>
+
+</header>
+
+
+<section class="hero">
+
+    <div>
+
+        <span class="pilot">
+            <i></i> LIVE SAFETY INTELLIGENCE · INDIA
+        </span>
+
+        <h1>
+            Arrive with a
+            <span>clearer picture.</span>
+        </h1>
+
+        <p>
+
+            Plan journeys with road-network routing, GPS context and verified safety evidence in one calm, useful view.
+
+        </p>
+
+        <a
+            href="#planner"
+            class="main-button"
+        >
+            Plan a safer route <b>↗</b>
+        </a>
+
+    </div>
+
+    <div class="hero-panel">
+        <div class="radar"><span></span><strong>ROUTE<br>READY</strong></div>
+        <div class="hero-panel-copy">
+            <span>YOUR JOURNEY, BETTER INFORMED</span>
+            <h3>See the road before you take it.</h3>
+            <p>Compare time, distance and evidence. You stay in control of the choice.</p>
+        </div>
+        <div class="hero-stats">
+            <div><strong>GPS</strong><small>Live position</small></div>
+            <div><strong>OSM</strong><small>Road network</small></div>
+            <div><strong>24/7</strong><small>Plan anytime</small></div>
+        </div>
+    </div>
+
+
+</section>
+
+
+<section
+    id="planner"
+    class="planner-section"
+>
+
+    <div class="section-title">
+
+        <span>
+            LIVE ROUTE PLANNER
+        </span>
+
+        <h2>
+            Your route, with the safety context included
+        </h2>
+
+        <p>
+            Use GPS or type a source. Search destinations by place, landmark, hotel or address.
+        </p>
+
+    </div>
+
+
+    <div class="planner">
+
+        <div class="search-row">
+
+            <div class="field">
+
+                <label>
+                    Start
+                </label>
+
+                <input
+                    id="start"
+                    placeholder="Current location or source"
+                >
+
+            </div>
+
+
+            <button
+                id="locationBtn"
+                class="secondary-button"
+            >
+                Use GPS
+            </button>
+
+
+            <div class="field">
+
+                <label>
+                    Destination
+                </label>
+
+                <input
+                    id="destination"
+                    placeholder="Pune, College, mall, hotel..."
+                >
+
+            </div>
+
+
+            <button
+                id="routeBtn"
+                class="main-button"
+            >
+                Compare routes
+            </button>
+
+        </div>
+
+        <div class="route-options" aria-label="Journey options">
+            <div class="field">
+                <label for="travelMode">Travel mode</label>
+                <select id="travelMode">
+                    <option value="car">🚗 Car</option>
+                    <option value="bike">🏍️ Bike</option>
+                    <option value="rail">🚆 Rail estimate</option>
+                    <option value="walk">🚶 Walk</option>
+                </select>
+            </div>
+
+            <div class="field">
+                <label for="travelPeriod">Time of day</label>
+                <select id="travelPeriod">
+                    <option value="morning">Morning traffic</option>
+                    <option value="afternoon">Afternoon traffic</option>
+                    <option value="evening">Evening traffic</option>
+                    <option value="night">Night / low traffic</option>
+                </select>
+            </div>
+        </div>
+
+        <p class="route-estimate-note">
+            ETA is an estimate based on route distance, selected mode and typical corridor traffic. It is not live traffic data.
+        </p>
+
+
+        <div class="nearby-row">
+
+            <button
+                onclick="searchNearby('place')"
+            >
+                📍 Named Places
+            </button>
+
+            <button
+                onclick="searchNearby('mall')"
+            >
+                🛍️ Malls
+            </button>
+
+            <button
+                onclick="searchNearby('hotel')"
+            >
+                🏨 Hotels
+            </button>
+
+            <button
+                onclick="searchNearby('petrol')"
+            >
+                ⛽ Petrol Pumps
+            </button>
+
+            <button
+                onclick="searchNearby('restaurant')"
+            >
+                🍴 Food
+            </button>
+
+            <button
+                onclick="searchNearby('hospital')"
+            >
+                🏥 Hospitals
+            </button>
+
+        </div>
+
+
+        <div
+            id="message"
+            class="message"
+        ></div>
+
+        <div
+            id="safetyAlert"
+            class="message"
+        ></div>
+
+
+        <div
+            id="map"
+        ></div>
+
+
+        <div class="legend">
+
+            <div>
+                <i class="red"></i>
+                High evidence risk
+            </div>
+
+            <div>
+                <i class="orange"></i>
+                Elevated evidence risk
+            </div>
+
+            <div>
+                <i class="yellow"></i>
+                Moderate evidence risk
+            </div>
+
+            <div>
+                <i class="green"></i>
+                Lower evidence risk
+            </div>
+
+            <div>
+                <i class="gray"></i>
+                Insufficient evidence
+            </div>
+
+        </div>
+
+
+        <div
+            id="routeCards"
+            class="route-cards"
+        ></div>
+
+    </div>
+
+</section>
+
+<section id="safety-guide" class="safety-guide">
+    <div class="section-title">
+        <span>TRAVEL WITH MORE AWARENESS</span>
+        <h2>Small checks. Better journeys.</h2>
+        <p>Safe Route combines practical navigation with useful safety habits. It does not replace your judgement or emergency services.</p>
+    </div>
+    <div class="guide-grid">
+        <article><span>01</span><h3>Before you leave</h3><p>Check the route, charge your phone, share your itinerary and keep a backup way to contact someone.</p></article>
+        <article><span>02</span><h3>While travelling</h3><p>Prefer well-lit places to stop, avoid distracted driving and keep emergency contacts easy to reach.</p></article>
+        <article><span>03</span><h3>When plans change</h3><p>Re-check conditions, choose a public location and contact local emergency services when there is immediate danger.</p></article>
+    </div>
+</section>
+
+
+<section
+    id="features"
+    class="features"
+>
+
+    <div class="section-title">
+
+        <span>
+            FREE FEATURES
+        </span>
+
+        <h2>
+            What every user gets
+        </h2>
+
+    </div>
+
+
+    <div class="feature-grid">
+
+        <article>
+            🗺️
+            <h3>
+                Practical route alternatives
+            </h3>
+            <p>
+                Uses the actual mapped road network.
+            </p>
+        </article>
+
+
+        <article>
+            📍
+            <h3>
+                GPS location
+            </h3>
+            <p>
+                Browser GPS provides the user's current
+                coordinates after permission.
+            </p>
+        </article>
+
+
+        <article>
+            🚧
+            <h3>
+                Official black spots
+            </h3>
+            <p>
+                Verified black-spot evidence is shown
+                separately from general map data.
+            </p>
+        </article>
+
+
+        <article>
+            ⏱️
+            <h3>
+                Distance & time
+            </h3>
+            <p>
+                Route distance and estimated duration
+                come from the routing engine.
+            </p>
+        </article>
+
+
+        <article>
+            🏨
+            <h3>
+                Nearby services
+            </h3>
+            <p>
+                Find malls, hotels, petrol pumps,
+                restaurants and hospitals.
+            </p>
+        </article>
+
+
+        <article>
+            🌦️
+            <h3>
+                Safety context
+            </h3>
+            <p>
+                Historical and hazard evidence can be
+                displayed separately from live conditions.
+            </p>
+        </article>
+
+    </div>
+
+</section>
+
+
+<section
+    id="premium"
+    class="premium"
+>
+
+    <div>
+
+        <span>
+            PREMIUM
+        </span>
+
+        <h2>
+            More safety tools for ₹126/month
+        </h2>
+
+        <p>
+            Premium extends the free route-planning
+            experience with emergency and assistance
+            workflows.
+        </p>
+
+
+        <ul>
+
+            <li>
+                ✓ Everything in Free
+            </li>
+
+            <li>
+                ✓ Emergency SOS workflow
+            </li>
+
+            <li>
+                ✓ Live location sharing
+            </li>
+
+            <li>
+                ✓ Voice-activated emergency trigger
+            </li>
+
+            <li>
+                ✓ Premium safety assistance
+            </li>
+
+        </ul>
+
+
+        <button
+            onclick="openPremium()"
+            class="premium-button"
+        >
+            Unlock Premium — ₹126
+        </button>
+
+    </div>
+
+</section>
+
+
+<div
+    id="premiumModal"
+    class="modal hidden"
+>
+
+    <div class="modal-box">
+
+        <button
+            class="close"
+            onclick="closePremium()"
+        >
+            ×
+        </button>
+
+        <h2>
+            Safe Route Premium
+        </h2>
+
+        <p>
+            ₹126 / month
+        </p>
+
+
+        <input
+            id="userName"
+            placeholder="Your name"
+        >
+
+        <input
+            id="userEmail"
+            type="email"
+            placeholder="Your email"
+        >
+
+        <input
+            id="userPhone"
+            placeholder="Your mobile number"
+        >
+
+
+        <button type="button" id="continuePaymentBtn" class="payment-btn">
+            Continue to Payment
+        </button>
+
+
+        <div
+            id="paymentMessage"
+            class="message"
+        ></div>
+
+        <div id="paymentStep2" class="payment-step" hidden>
+
+            <h2>Complete Payment</h2>
+
+            <div id="paymentStatusBadge" class="payment-status-badge payment-status-pending">
+                PENDING VERIFICATION
+            </div>
+
+            <p>Premium price: <strong>₹126 / month</strong></p>
+
+            <p>
+                Pay to owner phone:
+                <strong id="ownerPaymentPhone"></strong>
+            </p>
+
+            <button id="upiPayButton" type="button" class="payment-btn" hidden>
+                Pay with UPI
+            </button>
+
+            <p id="upiFallbackMessage" class="message" hidden>
+                UPI apps open this payment request on supported mobile devices. Use the UTR field below after payment.
+            </p>
+
+            <p>Order: <strong id="paymentOrderId"></strong></p>
+
+            <label for="paymentUtr">UPI transaction ID</label>
+            <input id="paymentUtr" placeholder="Enter UTR after payment">
+
+            <button type="button" id="submitUtrBtn" class="payment-btn">
+                Submit Payment Reference
+            </button>
+
+            <button type="button" id="checkPaymentStatusBtn" class="payment-status-btn">
+                Check verification status
+            </button>
+
+            <div id="paymentStepMessage" class="message"></div>
+
+            <p class="payment-note">
+                Premium becomes active only after the owner confirms the payment in the owner dashboard.
+            </p>
+
+        </div>
+
+    </div>
+
+</div>
+
+<footer>
+
+    <strong>
+        Safe Route
+    </strong>
+
+    <p>
+        Phase-1 pilot: Mumbai → Pune
+    </p>
+
+    <p>
+        Safety evidence does not guarantee real-world safety.
+    </p>
+
+</footer>
+
+
+<script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+></script>
+
+<script
+    src="script.js"
+></script>
+
+</body>
+
+</html>

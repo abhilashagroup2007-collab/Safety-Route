@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <title>
+        Safe Route Owner Dashboard
+    </title>
+
+    <style>
+
+        body {
+            font-family: Arial;
+            background: #f3efff;
+            padding: 40px;
+        }
+
+        table {
+            width: 100%;
+            background: white;
+            border-collapse: collapse;
+        }
+
+        th,
+        td {
+            padding: 12px;
+            border: 1px solid #ddd;
+            text-align: left;
+        }
+
+        th {
+            background: #6c58bd;
+            color: white;
+        }
+
+        button {
+            padding: 8px 12px;
+            cursor: pointer;
+        }
+
+    </style>
+
+</head>
+
+
+<body>
+
+<h1>
+    🛡️ Safe Route Owner Dashboard
+</h1>
+
+<p>
+    Private payment and premium-user history.
+</p>
+
+<p id="emailStatus">
+    Checking owner email delivery...
+</p>
+
+<button onclick="loadPayments()">
+    Load Payment History
+</button>
+
+<button onclick="emailPaymentReport()">
+    Email Official Status Report
+</button>
+
+<table>
+
+    <thead>
+
+        <tr>
+
+            <th>
+                Order
+            </th>
+
+            <th>
+                User
+            </th>
+
+            <th>
+                Email
+            </th>
+
+            <th>
+                Phone
+            </th>
+
+            <th>
+                Amount
+            </th>
+
+            <th>
+                UTR / Reference
+            </th>
+
+            <th>
+                Status
+            </th>
+
+            <th>
+                Action
+            </th>
+
+        </tr>
+
+    </thead>
+
+
+    <tbody id="payments">
+
+    </tbody>
+
+</table>
+
+
+<script src="admin.js"></script>
+
+</body>
+
+</html>
