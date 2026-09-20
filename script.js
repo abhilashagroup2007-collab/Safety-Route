@@ -1,5 +1,4 @@
 const API = "https://safety-route-suez.onrender.com/api";
-
    
 let map;
 
