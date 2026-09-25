@@ -35,9 +35,17 @@ function formatDuration(totalSeconds) {
 
 async function requestJSON(url, options) {
     let response;
+    const token = localStorage.getItem("safeRouteAuthToken");
+    const requestOptions = {
+        ...options,
+        headers: {
+            ...(options?.headers || {}),
+            ...(token ? { Authorization: `Bearer ${token}` } : {})
+        }
+    };
 
     try {
-        response = await fetch(url, options);
+        response = await fetch(url, requestOptions);
     } catch (error) {
         throw new Error(
             "Safe Route server is not running. Start it with: npm start, then open http://localhost:5000"
@@ -58,9 +66,7 @@ async function requestJSON(url, options) {
    MAP
 ===================================================== */
 
-document.addEventListener(
-    "DOMContentLoaded",
-    () => {
+function initializeApp() {
 
         map =
             L.map("map")
@@ -144,8 +150,15 @@ document.addEventListener(
             );
 
         restorePaymentStatus();
-    }
-);
+        loadSafetyDocuments();
+        document
+            .getElementById("safetyReportForm")
+            .addEventListener("submit", submitSafetyReport);
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+    initializeApp();
+});
 
 
 /* =====================================================
@@ -294,27 +307,46 @@ async function geocode(query) {
 
 async function loadSafetyEvidence() {
     try {
-        const response = await fetch(`${API}/blackspots`);
+        const response = await fetch(`${API}/safety-points`);
         const data = await response.json();
 
-        (data.data.locations || []).forEach(spot => {
+        (data.points || []).forEach(spot => {
+            const normalizedZone = String(spot.zone || "UNKNOWN").toUpperCase();
+            const zone = ["RED", "ORANGE", "YELLOW", "GREEN"].includes(normalizedZone)
+                ? normalizedZone
+                : "UNKNOWN";
+            const colors = {
+                RED: { color: "#991b1b", fillColor: "#ef4444" },
+                ORANGE: { color: "#9a3412", fillColor: "#f97316" },
+                YELLOW: { color: "#854d0e", fillColor: "#facc15" },
+                GREEN: { color: "#166534", fillColor: "#4ade80" },
+                UNKNOWN: { color: "#475569", fillColor: "#94a3b8" }
+            }[zone] || { color: "#475569", fillColor: "#94a3b8" };
+
             const marker = L.circleMarker(
                 [Number(spot.latitude), Number(spot.longitude)],
                 {
-                    radius: 8,
-                    color: "#9b1c31",
-                    fillColor: "#e53935",
+                    radius: 11,
+                    color: colors.color,
+                    fillColor: colors.fillColor,
                     fillOpacity: 0.85,
-                    weight: 2
+                    weight: 3
                 }
             ).addTo(map);
 
+            const image = spot.image_url
+                ? `<img class="safety-popup-image" src="${spot.image_url}" alt="Road safety location: ${spot.name || spot.location}" loading="lazy">`
+                : "";
+
             marker.bindPopup(`
-                <strong>Official black spot</strong><br>
-                ${spot.location}<br>
+                ${image}
+                <strong>${spot.name || spot.location}</strong><br>
                 Road: ${spot.road || "Not specified"}<br>
-                Source: Maharashtra Highway Traffic Police<br>
-                <strong>Precaution:</strong> reduce speed, keep extra distance and avoid stopping on the carriageway.
+                Risk band: <strong>${zone}</strong><br>
+                Incidents: ${spot.incident_types?.join(", ") || "Reported road incident"}<br>
+                Recorded incidents: ${spot.incident_count ?? "Not provided"}; fatalities: ${spot.fatality_count ?? "Not provided"}<br>
+                ${spot.incident_summary || "Reported road safety incident."}<br>
+                Source: ${spot.source_name || "Government safety record"}
             `);
 
             evidenceLayers.push(marker);
@@ -734,8 +766,13 @@ function renderRouteCards(
                     route.evidence
                     .slice(0,3)
                     .map(
-                        e =>
-                            `
+                        e => {
+                            const image = e.image_url
+                                ? `<img class="route-evidence-image" src="${e.image_url}" alt="Safety evidence at ${e.location}" loading="lazy">`
+                                : "";
+
+                            return `
+                            ${image}
                             <p>
                                 <b>
                                     ${e.type}
@@ -744,7 +781,11 @@ function renderRouteCards(
                                 ${e.location}
                                 (${e.distance_km} km)
                             </p>
+                            <p class="route-evidence-summary">
+                                ${e.incident_summary || "Reported road safety incident."}
+                            </p>
                             `
+                        }
                     )
                     .join("");
 
@@ -1245,5 +1286,50 @@ function restorePaymentStatus() {
     const orderId = localStorage.getItem("safeRouteOrderId");
     if (orderId) {
         checkPaymentStatus(orderId);
+    }
+}
+
+async function loadSafetyDocuments() {
+    const container = document.getElementById("safetyDocuments");
+
+    try {
+        const data = await requestJSON(`${API}/safety-documents`);
+
+        if (!data.documents.length) {
+            container.innerHTML = "<p class=\"message\">No owner-published documents yet.</p>";
+            return;
+        }
+
+        container.innerHTML = data.documents.map(document => `
+            <a class="safety-document" href="${document.url}" target="_blank" rel="noopener">
+                <strong>${document.originalName}</strong>
+                <span>${document.mimeType} · ${(document.size / 1024).toFixed(1)} KB</span>
+                <small>Published ${new Date(document.uploadedAt).toLocaleString()}</small>
+            </a>
+        `).join("");
+    } catch (error) {
+        container.innerHTML = `<p class="message">${error.message}</p>`;
+    }
+}
+
+async function submitSafetyReport(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const status = document.getElementById("safetyReportStatus");
+    const formData = new FormData(form);
+    const report = Object.fromEntries(formData.entries());
+
+    try {
+        const data = await requestJSON(`${API}/safety-reports`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(report)
+        });
+        status.textContent = data.message;
+        if (data.success) {
+            form.reset();
+        }
+    } catch (error) {
+        status.textContent = error.message;
     }
 }
