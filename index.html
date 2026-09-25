@@ -29,13 +29,12 @@
 
 <body>
 
-
 <header class="navbar">
 
     <div class="brand">
 
         <img
-            src="Safe_route_logo.png"
+            src="assets/Safe_route_logo.png"
             alt="Safe Route"
             class="logo-image"
         >
@@ -71,6 +70,10 @@
 
         <a href="#safety-guide">
             Safety guide
+        </a>
+
+        <a href="#safety-route-data">
+            Safety Route data
         </a>
 
     </nav>
@@ -331,6 +334,34 @@
     </div>
 </section>
 
+<section id="safety-route-data" class="safety-route-data">
+    <div class="section-title">
+        <span>SAFETY ROUTE DATA</span>
+        <h2>Owner-published safety documents</h2>
+        <p>Review the latest documents published by the owner and report zones that feel Safe while travelling.</p>
+    </div>
+    <div id="safetyDocuments" class="safety-documents">
+        <p class="message">Loading published safety documents...</p>
+    </div>
+    <form id="safetyReportForm" class="safety-report-form">
+        <h3>Report on Safety Zones by Government</h3>
+        <input name="zone" placeholder="Zone or district" required>
+        <input name="location" placeholder="Location or road" required>
+        <select name="incidentType" required>
+            <option value="">Choose concern type</option>
+            <option>Crash risk</option>
+            <option>Unsafe road condition</option>
+            <option>Crime or harassment concern</option>
+            <option>Flooding, landslide or hazard</option>
+            <option>Other safety concern</option>
+        </select>
+        <input name="email" type="email" placeholder="Your email (optional)">
+        <textarea name="details" rows="4" placeholder="Describe what users should know" required></textarea>
+        <button type="submit" class="main-button">Notify owner</button>
+        <p id="safetyReportStatus" class="message"></p>
+    </form>
+</section>
+
 
 <section
     id="features"
@@ -575,7 +606,7 @@
             <div id="paymentStepMessage" class="message"></div>
 
             <p class="payment-note">
-                Premium becomes active only after the owner confirms the payment in the owner dashboard.
+                Premium activates immediately after your payment reference is submitted. The owner is notified by email.
             </p>
 
         </div>
