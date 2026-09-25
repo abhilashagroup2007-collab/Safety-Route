@@ -1,6 +1,11 @@
-const API = window.location.protocol === "file:"
-    ? "https://safety-route-swez.onrender.com/api"
-    : "/api";
+const API = "https://safety-route-swez.onrender.com"; 
+
+// When calling your payment endpoint, use the variable:
+fetch(`${API}/checkout`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(paymentDetails)
+})
    
 let map;
 
