@@ -7,16 +7,26 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const nodemailer = require("nodemailer");
+const multer = require("multer");
 
 const app = express();
 
 const PORT = process.env.PORT || 5000;
 
 const DATA_DIR = path.join(__dirname, "data");
+const SAFETY_DOCUMENTS_DIR = path.join(DATA_DIR, "safety_documents");
+const sessions = new Map();
+
+fs.mkdirSync(SAFETY_DOCUMENTS_DIR, { recursive: true });
 
 app.use(cors());
 app.use(express.json({ limit: "1mb" }));
-app.use(express.static(__dirname));
+app.use(express.static(__dirname, { index: false }));
+
+const safetyUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 5 * 1024 * 1024, files: 10 }
+});
 
 
 /* =====================================================
@@ -61,6 +71,62 @@ function writeJSON(name, data) {
         JSON.stringify(data, null, 2),
         "utf8"
     );
+}
+
+function hashPassword(password, salt = crypto.randomBytes(16).toString("hex")) {
+    return `${salt}:${crypto.scryptSync(password, salt, 64).toString("hex")}`;
+}
+
+function passwordMatches(password, storedHash) {
+    try {
+        const [salt, expected] = String(storedHash).split(":");
+        const actual = crypto.scryptSync(password, salt, 64).toString("hex");
+        return crypto.timingSafeEqual(
+            Buffer.from(actual, "hex"),
+            Buffer.from(expected, "hex")
+        );
+    } catch (error) {
+        return false;
+    }
+}
+
+function publicUser(user) {
+    return {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        canUpload: user.canUpload === true
+    };
+}
+
+function sessionUser(req) {
+    const token = String(req.headers.authorization || "")
+        .replace(/^Bearer\s+/i, "")
+        .trim();
+    return sessions.get(token) || null;
+}
+
+function authRequired(req, res, next) {
+    const user = sessionUser(req);
+
+    if (!user) {
+        return res.status(401).json({
+            success: false,
+            message: "Please log in to continue."
+        });
+    }
+
+    req.authUser = user;
+    next();
+}
+
+function users() {
+    return readJSON("users.json", []);
+}
+
+function saveUsers(data) {
+    writeJSON("users.json", data);
 }
 
 function createOrderId(payments) {
@@ -173,6 +239,60 @@ async function sendOwnerPaymentReport(payments) {
     return true;
 }
 
+async function sendSafetyReport(report) {
+    const mailer = createMailer();
+    const ownerEmail = process.env.OWNER_EMAIL;
+
+    if (!mailer || !(process.env.SMTP_FROM || process.env.SMTP_USER) || !ownerEmail) {
+        return false;
+    }
+
+    await mailer.sendMail({
+        from: process.env.SMTP_FROM || process.env.SMTP_USER,
+        to: ownerEmail,
+        subject: "Safe Route unsafe-zone report",
+        text:
+            `A user reported a safety concern on Safe Route.\n\n` +
+            `Zone: ${report.zone}\n` +
+            `Location: ${report.location}\n` +
+            `Incident type: ${report.incidentType}\n` +
+            `Details: ${report.details}\n` +
+            `Reporter: ${report.email || "Not provided"}`
+    });
+
+    return true;
+}
+
+function safetyDocuments() {
+    const uploadedDocuments = fs.readdirSync(SAFETY_DOCUMENTS_DIR)
+        .map(name => {
+            const documentPath = path.join(SAFETY_DOCUMENTS_DIR, name);
+            const stats = fs.statSync(documentPath);
+            const metadataPath = `${documentPath}.meta.json`;
+            const metadata = fs.existsSync(metadataPath)
+                ? readJSON(path.join("safety_documents", `${name}.meta.json`), {})
+                : {};
+
+            return {
+                name,
+                originalName: metadata.originalName || name,
+                mimeType: metadata.mimeType || "application/octet-stream",
+                size: stats.size,
+                uploadedAt: metadata.uploadedAt || stats.mtime.toISOString(),
+                url: `/safety-documents/${encodeURIComponent(name)}`
+            };
+        })
+        .filter(document =>
+            document.name !== ".gitkeep" &&
+            !document.name.endsWith(".meta.json")
+        )
+        .sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt));
+
+    const links = readJSON("safety_links.json", []);
+    return [...uploadedDocuments, ...links]
+        .sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt));
+}
+
 
 /* =====================================================
    LOAD DATA
@@ -202,6 +322,50 @@ const corridorData =
         {}
     );
 
+let safetyPointData =
+    readJSON(
+        "safety_points.json",
+        { points: [] }
+    );
+
+function getSafetyPoints() {
+    const ownerPoints = (safetyPointData.points || []).map(point => ({
+        ...point,
+        zone: ["RED", "ORANGE", "YELLOW", "GREEN"].includes(
+            String(point.zone || "").toUpperCase()
+        ) ? String(point.zone).toUpperCase() : "UNKNOWN",
+        incident_types: point.incident_types || ["Reported road incident"],
+        image_url: point.image_url || null
+    }));
+
+    const ownerCoordinates = ownerPoints.map(point => [
+        Number(point.latitude),
+        Number(point.longitude)
+    ]);
+
+    const legacyPoints = (blackspotData.locations || [])
+        .filter(spot => !ownerCoordinates.some(([lat, lon]) =>
+            distanceKm(lat, lon, Number(spot.latitude), Number(spot.longitude)) < 0.2
+        ))
+        .map((spot, index) => ({
+            ...spot,
+            id: spot.id || `BLACKSPOT-${index + 1}`,
+            sequence: ownerPoints.length + index + 1,
+            incident_types: ["Vehicle collision", "Fatal crash"],
+            incident_summary: "Official black-spot record with reported road incidents.",
+            incident_count: Object.values(spot.accidents || {})
+                .reduce((total, count) => total + Number(count || 0), 0),
+            fatality_count: Object.values(spot.fatalities || {})
+                .reduce((total, count) => total + Number(count || 0), 0),
+            source_name: "Maharashtra Highway Traffic Police",
+            source_url: blackspotData.source_url || null,
+            image_url: null
+        }));
+
+    return [...ownerPoints, ...legacyPoints]
+        .sort((a, b) => Number(a.sequence || 0) - Number(b.sequence || 0));
+}
+
 
 /* =====================================================
    HOME
@@ -212,10 +376,125 @@ app.get("/", (req, res) => {
     res.sendFile(
         path.join(
             __dirname,
-            "index.html"
-        )
+                "index.html"
+        ),
+        { headers: { "Cache-Control": "no-store" } }
     );
 
+});
+
+app.get("/app", (req, res) => {
+    res.sendFile(path.join(__dirname, "index.html"));
+});
+
+app.post("/api/auth/register", (req, res) => {
+    const name = String(req.body.name || "").trim();
+    const email = String(req.body.email || "").trim().toLowerCase();
+    const password = String(req.body.password || "");
+
+    if (!name || !email || password.length < 8) {
+        return res.status(400).json({
+            success: false,
+            message: "Name, email and a password of at least 8 characters are required."
+        });
+    }
+
+    if (email === String(process.env.OWNER_EMAIL || "").toLowerCase()) {
+        return res.status(409).json({
+            success: false,
+            message: "The permanent owner account cannot be registered again."
+        });
+    }
+
+    const registeredUsers = users();
+    if (registeredUsers.some(user => user.email === email)) {
+        return res.status(409).json({
+            success: false,
+            message: "An account with this email already exists."
+        });
+    }
+
+    const user = {
+        id: `user-${crypto.randomUUID()}`,
+        name,
+        email,
+        passwordHash: hashPassword(password),
+        role: "USER",
+        canUpload: false,
+        createdAt: new Date().toISOString()
+    };
+
+    registeredUsers.push(user);
+    saveUsers(registeredUsers);
+
+    res.status(201).json({
+        success: true,
+        message: "Account created. You can now log in.",
+        user: publicUser(user)
+    });
+});
+
+app.post("/api/auth/login", (req, res) => {
+    const email = String(req.body.email || "").trim().toLowerCase();
+    const name = String(req.body.name || "").trim().replace(/\s+/g, " ");
+    const password = String(req.body.password || "");
+    const requestedRole = String(req.body.role || "USER").toUpperCase();
+    const configuredOwnerName = String(process.env.OWNER_NAME || "")
+        .trim()
+        .replace(/\s+/g, " ");
+    let user = null;
+
+    if (
+        (email === String(process.env.OWNER_EMAIL || "").toLowerCase() ||
+            name.toLowerCase() === configuredOwnerName.toLowerCase()) &&
+        process.env.OWNER_PASSWORD &&
+        password === process.env.OWNER_PASSWORD
+    ) {
+        user = {
+            id: "owner",
+            name: process.env.OWNER_NAME || "Safety Route Owner",
+            email: process.env.OWNER_EMAIL,
+            role: "OWNER",
+            canUpload: true
+        };
+    } else {
+        user = users().find(candidate =>
+            candidate.email === email &&
+            passwordMatches(password, candidate.passwordHash)
+        );
+    }
+
+    if (user && requestedRole === "OWNER" && user.role !== "OWNER") {
+        user = null;
+    }
+
+    if (!user) {
+        return res.status(401).json({
+            success: false,
+            message: "Email or password is incorrect."
+        });
+    }
+
+    const token = crypto.randomBytes(32).toString("hex");
+    sessions.set(token, user);
+
+    res.json({
+        success: true,
+        token,
+        user: publicUser(user)
+    });
+});
+
+app.get("/api/auth/me", authRequired, (req, res) => {
+    res.json({ success: true, user: publicUser(req.authUser) });
+});
+
+app.post("/api/auth/logout", authRequired, (req, res) => {
+    const token = String(req.headers.authorization || "")
+        .replace(/^Bearer\s+/i, "")
+        .trim();
+    sessions.delete(token);
+    res.json({ success: true });
 });
 
 
@@ -286,6 +565,146 @@ app.get("/api/blackspots", (req, res) => {
 
 });
 
+app.get("/api/safety-points", (req, res) => {
+    res.json({
+        success: true,
+        source: safetyPointData.source || null,
+        points: getSafetyPoints()
+    });
+});
+
+app.get("/api/safety-documents", (req, res) => {
+    res.json({ success: true, documents: safetyDocuments() });
+});
+
+app.get("/safety-documents/:name", (req, res) => {
+    const name = path.basename(req.params.name);
+    const documentPath = path.join(SAFETY_DOCUMENTS_DIR, name);
+
+    if (!fs.existsSync(documentPath) || name.endsWith(".meta.json")) {
+        return res.status(404).send("Safety document not found.");
+    }
+
+    res.sendFile(documentPath);
+});
+
+app.post(
+    "/api/admin/safety-points/upload",
+    adminOnly,
+    safetyUpload.array("safetyData", 10),
+    (req, res) => {
+        if (!req.files?.length) {
+            return res.status(400).json({
+                success: false,
+                message: "Choose one or more safety-data files to upload."
+            });
+        }
+
+        const documents = [];
+        const newPoints = [];
+
+        for (const uploadedFile of req.files) {
+            const extension = path.extname(uploadedFile.originalname).toLowerCase();
+            const storedName = `${Date.now()}-${crypto.randomBytes(4).toString("hex")}${extension}`;
+            const storedPath = path.join(SAFETY_DOCUMENTS_DIR, storedName);
+
+            if (extension === ".json") {
+                let uploadedData;
+
+                try {
+                    uploadedData = JSON.parse(uploadedFile.buffer.toString("utf8"));
+                } catch (error) {
+                    return res.status(400).json({
+                        success: false,
+                        message: `${uploadedFile.originalname} is not valid JSON.`
+                    });
+                }
+
+                if (!Array.isArray(uploadedData.points)) {
+                    return res.status(400).json({
+                        success: false,
+                        message: `${uploadedFile.originalname} must contain a points array.`
+                    });
+                }
+
+                const invalidPoint = uploadedData.points.find(point =>
+                    !point ||
+                    !Number.isFinite(Number(point.latitude)) ||
+                    !Number.isFinite(Number(point.longitude))
+                );
+
+                if (invalidPoint) {
+                    return res.status(400).json({
+                        success: false,
+                        message: `Every point in ${uploadedFile.originalname} needs numeric latitude and longitude.`
+                    });
+                }
+
+                newPoints.push(...uploadedData.points);
+            }
+
+            fs.writeFileSync(storedPath, uploadedFile.buffer);
+            writeJSON(path.join("safety_documents", `${storedName}.meta.json`), {
+                originalName: uploadedFile.originalname,
+                mimeType: uploadedFile.mimetype,
+                uploadedAt: new Date().toISOString()
+            });
+            documents.push(uploadedFile.originalname);
+        }
+
+        if (newPoints.length) {
+            safetyPointData = {
+                ...safetyPointData,
+                points: [...(safetyPointData.points || []), ...newPoints]
+            };
+            writeJSON("safety_points.json", safetyPointData);
+        }
+
+        res.json({
+            success: true,
+            count: documents.length,
+            message: `${documents.length} safety document(s) uploaded and published for users.`
+        });
+    }
+);
+
+app.post("/api/safety-reports", async (req, res) => {
+    const { zone, location, incidentType, details, email } = req.body;
+
+    if (!zone || !location || !incidentType || !details) {
+        return res.status(400).json({
+            success: false,
+            message: "Zone, location, incident type and details are required."
+        });
+    }
+
+    const report = {
+        zone,
+        location,
+        incidentType,
+        details,
+        email,
+        reportedAt: new Date().toISOString()
+    };
+
+    const reports = readJSON("safety_reports.json", []);
+    reports.push(report);
+    writeJSON("safety_reports.json", reports);
+
+    const emailSent = await sendSafetyReport(report).catch(error => {
+        console.error("SAFETY REPORT EMAIL ERROR:", error.message);
+        return false;
+    });
+
+    res.json({
+        success: true,
+        emailSent,
+        message: emailSent
+            ? "Your report was sent to the owner."
+            : "Your report was saved. Owner email delivery is not configured yet."
+    });
+});
+
 app.get("/api/safety-context", (req, res) => {
     const lat = Number(req.query.lat);
     const lon = Number(req.query.lon);
@@ -297,7 +716,7 @@ app.get("/api/safety-context", (req, res) => {
         });
     }
 
-    const nearby = (blackspotData.locations || [])
+    const nearby = getSafetyPoints()
         .map(spot => ({
             ...spot,
             distance_km: Number(distanceKm(
@@ -451,8 +870,7 @@ function analyseRoute(
         densifyCoordinates(coordinates);
 
 
-    const blackspots =
-        blackspotData.locations || [];
+    const safetyPoints = getSafetyPoints();
 
 
     /* -----------------------------------------------
@@ -460,7 +878,7 @@ function analyseRoute(
     ------------------------------------------------ */
 
     for (
-        const spot of blackspots
+        const spot of safetyPoints
     ) {
 
         let closest = Infinity;
@@ -493,7 +911,7 @@ function analyseRoute(
 
             evidence.push({
 
-                type: "OFFICIAL BLACK SPOT",
+                type: spot.incident_types?.join(" / ") || "REPORTED ROAD INCIDENT",
 
                 severity: "HIGH",
 
@@ -506,7 +924,13 @@ function analyseRoute(
                     ),
 
                 source:
-                    "Maharashtra Highway Traffic Police"
+                    spot.source_name || "Government safety record",
+
+                incident_summary:
+                    spot.incident_summary || "Reported road safety incident.",
+
+                image_url:
+                    spot.image_url || null
 
             });
 
@@ -518,7 +942,7 @@ function analyseRoute(
 
             evidence.push({
 
-                type: "OFFICIAL BLACK SPOT",
+                type: spot.incident_types?.join(" / ") || "REPORTED ROAD INCIDENT",
 
                 severity: "MEDIUM",
 
@@ -531,7 +955,13 @@ function analyseRoute(
                     ),
 
                 source:
-                    "Maharashtra Highway Traffic Police"
+                    spot.source_name || "Government safety record",
+
+                incident_summary:
+                    spot.incident_summary || "Reported road safety incident.",
+
+                image_url:
+                    spot.image_url || null
 
             });
 
@@ -543,7 +973,7 @@ function analyseRoute(
 
             evidence.push({
 
-                type: "OFFICIAL BLACK SPOT",
+                type: spot.incident_types?.join(" / ") || "REPORTED ROAD INCIDENT",
 
                 severity: "LOW",
 
@@ -556,7 +986,13 @@ function analyseRoute(
                     ),
 
                 source:
-                    "Maharashtra Highway Traffic Police"
+                    spot.source_name || "Government safety record",
+
+                incident_summary:
+                    spot.incident_summary || "Reported road safety incident.",
+
+                image_url:
+                    spot.image_url || null
 
             });
 
@@ -1392,7 +1828,7 @@ app.post(
 
 app.post(
     "/api/payment/utr",
-    (req, res) => {
+    async (req, res) => {
 
         const {
             orderId,
@@ -1454,7 +1890,13 @@ app.post(
         payment.utr = paymentReference;
 
         payment.status =
-            "USER_REPORTED";
+            "VERIFIED";
+
+        payment.premiumActivated =
+            true;
+
+        payment.verifiedAt =
+            new Date().toISOString();
 
         payment.reportedAt =
             new Date().toISOString();
@@ -1466,20 +1908,32 @@ app.post(
         );
 
         notifyOwner(
-            "Safe Route Premium payment reference received",
+            "Safe Route Premium payment received",
             payment,
-            "PAYMENT REFERENCE SUBMITTED - awaiting owner verification"
+            "ACTIVE - payment reference submitted and premium activated"
         );
+
+        let emailSent = false;
+
+        try {
+            emailSent = await sendVerificationEmail(payment);
+        } catch (error) {
+            console.error("PAYMENT EMAIL ERROR:", error.message);
+        }
 
 
         res.json({
 
             success: true,
 
-            verificationStatus: "PENDING",
+            verificationStatus: "ACTIVE",
+
+            premiumActivated: true,
+
+            emailSent,
 
             message:
-                "Payment submitted for owner verification."
+                "Payment reference received. Premium is active now."
 
         });
 
@@ -1525,17 +1979,15 @@ app.get(
 ===================================================== */
 
 function adminOnly(req, res, next) {
-
-    const password =
-        req.headers[
-            "x-admin-password"
-        ];
-
+    const user = sessionUser(req);
+    const legacyPassword = req.headers["x-admin-password"];
 
     if (
-        !password ||
-        password !==
-        process.env.ADMIN_PASSWORD
+        !(
+            user &&
+            (user.role === "OWNER" || user.canUpload === true)
+        ) &&
+        legacyPassword !== process.env.ADMIN_PASSWORD
     ) {
 
         return res.status(401).json({
@@ -1553,6 +2005,36 @@ function adminOnly(req, res, next) {
     next();
 
 }
+
+app.post("/api/admin/users/:userId/access", adminOnly, (req, res) => {
+    const registeredUsers = users();
+    const user = registeredUsers.find(candidate => candidate.id === req.params.userId);
+
+    if (!user) {
+        return res.status(404).json({
+            success: false,
+            message: "User account not found."
+        });
+    }
+
+    user.canUpload = req.body.canUpload === true;
+    saveUsers(registeredUsers);
+
+    res.json({
+        success: true,
+        user: publicUser(user),
+        message: user.canUpload
+            ? "User can now upload owner-approved safety documents."
+            : "User upload access removed."
+    });
+});
+
+app.get("/api/admin/users", adminOnly, (req, res) => {
+    res.json({
+        success: true,
+        users: users().map(publicUser)
+    });
+});
 
 
 /* =====================================================
@@ -1748,3 +2230,31 @@ app.listen(
         );
     }
 );
+
+app.post("/api/admin/safety-documents/link", adminOnly, (req, res) => {
+    const title = String(req.body.title || "").trim();
+    const url = String(req.body.url || "").trim();
+
+    if (!title || !/^https?:\/\//i.test(url)) {
+        return res.status(400).json({
+            success: false,
+            message: "Enter a title and a valid http or https link."
+        });
+    }
+
+    const links = readJSON("safety_links.json", []);
+    links.push({
+        name: `link-${crypto.randomUUID()}`,
+        originalName: title,
+        mimeType: "Published link",
+        size: 0,
+        uploadedAt: new Date().toISOString(),
+        url
+    });
+    writeJSON("safety_links.json", links);
+
+    res.json({
+        success: true,
+        message: "Safety link published for users."
+    });
+});
