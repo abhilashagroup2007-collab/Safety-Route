@@ -59,6 +59,29 @@
     Checking owner email delivery...
 </p>
 
+<section class="safety-upload">
+    <h2>Safety data</h2>
+    <p>Upload one or more documents. JSON files containing a <code>points</code> array are also added to the map.</p>
+    <form id="safetyUploadForm">
+        <input id="safetyDataFile" type="file" accept=".json,.pdf,.csv,.xlsx,.xls,.doc,.docx,.png,.jpg,.jpeg" multiple required>
+        <button type="submit">Upload safety data</button>
+    </form>
+    <p id="safetyUploadStatus"></p>
+    <form id="safetyLinkForm">
+        <input id="safetyLinkTitle" placeholder="Published link title">
+        <input id="safetyLinkUrl" type="url" placeholder="https://government-source.example/report">
+        <button type="submit">Publish link</button>
+    </form>
+    <p id="safetyLinkStatus"></p>
+</section>
+
+<section class="user-access">
+    <h2>Authorized upload users</h2>
+    <p>Only users granted access by the permanent owner can upload documents.</p>
+    <button type="button" onclick="loadAuthorizedUsers()">Load registered users</button>
+    <div id="authorizedUsers"></div>
+</section>
+
 <button onclick="loadPayments()">
     Load Payment History
 </button>
